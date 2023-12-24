@@ -1,5 +1,5 @@
 const GRAVITY_ACC = 0.0
-const GRAVITY_CONST = 5
+const GRAVITY_CONST = 10
 const OBJECTS_GRAVITY = .001
 const FRAME_RATE = 60
 const DATA_UPDATE_RATE = 200
@@ -29,6 +29,16 @@ document.querySelector('#reset')?.addEventListener('click', () => {
     })
     objects = []
     createFirstEl()
+})
+
+window.addEventListener('wheel', (e) => {
+    const delta = Math.ceil(e.deltaY / 100) * -10
+    console.log(delta)
+    app.defaultMass = (app.defaultMass || 1) + delta
+
+    if (app.defaultMass < 1) {
+        app.defaultMass = 1
+    }
 })
 
 const deleteEl = el => {
@@ -73,11 +83,6 @@ const calculateAccBetweenTwoEls = (ax, ay, am, bx, by, bm) => {
 
     const acc = force / am
 
-    textWrapper.innerHTML = `
-    <br> distance: ${distance}
-    <br> force: ${force} 
-    <br> acc: ${acc}`
-
     return {
         acc,
         force,
@@ -107,7 +112,7 @@ const updateElAcc = el => {
 
         const distance = distanceBetweenTwoEls(el.x, el.y, obj.x, obj.y)
 
-        if (distance < (el.r + obj.r)) {
+        if (distance < (el.r + obj.r + 10)) {
             return
         }
         
@@ -130,16 +135,6 @@ const updateElAcc = el => {
             xMult,
             yMult,
         } = destructAcc(acc / 2, angle)
-
-        textWrapper.innerHTML = `
-        <br> angle: ${angle}
-        <br> xAcc: ${xAcc}
-        <br> yAcc: ${yAcc}
-        <br> xMult: ${xMult}
-        <br> yMult: ${yMult}
-        <br> acc: ${acc}
-        <br> distance: ${distance}
-        `
 
     
         updateElYSpeed(el, ((yAcc * yMult) + GRAVITY_ACC) / DATA_UPDATE_RATE)
@@ -180,12 +175,12 @@ const updateElPos = el => {
 
     if ( invertX ) {
         el.xSpeed *= -1
-        el.xSpeed = el.xSpeed / 1.3
+        el.xSpeed = el.xSpeed / 2
     }
 
     if ( invertY ) {
         el.ySpeed *= -1
-        el.ySpeed = el.ySpeed / 1.3
+        el.ySpeed = el.ySpeed / 2
     }
 
     el.x += el.xSpeed;
@@ -244,7 +239,7 @@ app.addEventListener('mousemove', (e) => {
     containers.clientY.innerHTML = appData.clientY;
 })
 
-const render = () => {
+const render = async () => {
     ctx.clearRect(0, 0, containers.app.width, containers.app.height);
     maxMass = 0
     objects.forEach(el => {
@@ -253,37 +248,93 @@ const render = () => {
         }
     })
 
-    objects.forEach((el, index) => {
-        ctx.beginPath();
-        ctx.arc(el.x, el.y, el.maxRelevantGravityRadius, 0, 2 * Math.PI);
-        // ctx.stroke()
-       
-        const gradient = ctx.createRadialGradient(
-            el.x,
-            el.y,
-            el.r,
-            el.x,
-            el.y,
-            el.maxRelevantGravityRadius,
-        );
-
-        gradient.addColorStop(0, "green");
-        gradient.addColorStop(1, "transparent");
-        ctx.fillStyle = gradient;
-        ctx.fill();
-
-        ctx.beginPath();
-        ctx.arc(el.x, el.y, el.r, 0, 2 * Math.PI);
-        ctx.fillStyle = `rgba(255, 0, 0, ${el.mass / maxMass})`;
-        ctx.fill();
-        ctx.stroke();
-
+    const promisses = objects.map((el) => {
+        return new Promise((resolve, _) => {
+            ctx.beginPath();
+            ctx.arc(el.x, el.y, el.maxRelevantGravityRadius, 0, 2 * Math.PI);
+            // ctx.stroke()
+           
+            const gradient = ctx.createRadialGradient(
+                el.x,
+                el.y,
+                el.r,
+                el.x,
+                el.y,
+                el.maxRelevantGravityRadius,
+            );
+    
+            gradient.addColorStop(0, el.color ?? "green");
+            gradient.addColorStop(1, "transparent");
+            ctx.fillStyle = gradient;
+            ctx.fill();
+    
+            ctx.beginPath();
+            ctx.arc(el.x, el.y, el.r, 0, 2 * Math.PI);
+            ctx.fillStyle = `rgba(255, 0, 0, ${el.mass / maxMass})`;
+            ctx.fill();
+            ctx.stroke();
+            resolve()
             // ctx.fillText(`ys: ${el.ySpeed}`, el.x - 10, el.y + el.r + 15);
             // ctx.fillText(`xs: ${el.xSpeed}`, el.x - 10, el.y + el.r + 30);
             // ctx.fillText(`el ${index}`, el.x, el.y - 25);
             // ctx.fillText(`x: ${el.x}`, el.x - 10, el.y + el.r + 45);
             // ctx.fillText(`y: ${el.y}`, el.x - 10, el.y + el.r + 60);
+        })
     })
+
+    promisses.push(new Promise((resolve, _) => {
+        ctx.beginPath();
+        const maxRadius = calculateMaxRelevantGravityRadius({
+            mass: app.defaultMass ?? 1,
+        })
+
+        ctx.arc(
+            appData.clientX, 
+            appData.clientY,
+            maxRadius, 
+            0, 
+            2 * Math.PI
+        );
+        // ctx.stroke()
+       
+        const gradient = ctx.createRadialGradient(
+            appData.clientX,
+            appData.clientY,
+            1,
+            appData.clientX,
+            appData.clientY,
+            maxRadius,
+        );
+
+        gradient.addColorStop(0, "rgb(255,0,0)");
+        gradient.addColorStop(1, "transparent");
+        ctx.fillStyle = gradient;
+        ctx.fill();
+        resolve()
+    }))
+
+    await Promise.all(promisses)
+}
+
+const calculateMaxRelevantGravityRadius = (el) => {
+    let force = 0
+    let r = 1
+    let mass = .001
+    let max = 10000
+
+    do {
+        data = calculateAccBetweenTwoEls(
+            0,
+            0,
+            el.mass,
+            0,
+            r++,
+            mass,
+        )
+        force = data.force
+    } while( force > 0.0019 && r < max )
+
+    return r
 }
 
 const createEl = (props) => {
@@ -295,6 +346,7 @@ const createEl = (props) => {
         x: appData.clientX,
         y: appData.clientY,
         r: 2,
+        color: `rgb(${Math.random() * 255}, ${Math.random() * 255}, ${Math.random() * 255})`,
         mass: 10,
         ySpeed: 0,
         xSpeed: 0,
@@ -310,44 +362,32 @@ const createEl = (props) => {
         ...props,
     }
 
-    let force = 0
-    let r = 1
-    let mass = .001
-    let max = 10000
-
-    do {
-        data = calculateAccBetweenTwoEls(
-            0,
-            0,
-            final.mass,
-            0,
-            r++,
-            mass,
-        )
-        force = data.force
-    } while( force > 0.001 && r < max )
-
-    final.maxRelevantGravityRadius = r
+    final.maxRelevantGravityRadius = calculateMaxRelevantGravityRadius(final)
 
     afterElCreate(final)
     objects.push(final)
     return final
 }
 
-containers.app.addEventListener('click', () => {
-    const el = {
-        x: appData.clientX,
-        y: appData.clientY,
-        r: 2,
-        mass: 100,
-        ySpeed: 0,
-        xSpeed: 0,
-        updateElAcc: null,
-        updateElPos: null,
-        calculateElGroundColision: null,
-    }
+containers.app.addEventListener('mouseup', () => {
+    clearInterval(app.interval)
+})
 
-    createEl(el)
+containers.app.addEventListener('mousedown', () => {
+    app.interval = setInterval(() => {
+        const el = {
+            x: appData.clientX,
+            y: appData.clientY,
+            r: 2,
+            mass: app?.defaultMass || 1,
+            ySpeed: 0,
+            xSpeed: 0,
+            updateElAcc: null,
+            updateElPos: null,
+            calculateElGroundColision: null,
+        }
+        createEl(el)
+    }, 50)
 });
 
 const createFirstEl = () => {
@@ -355,8 +395,8 @@ const createFirstEl = () => {
         x: (containers.app.width / 2) - 5,
         y: (containers.app.height / 2) - 5,
         r: 10,
-        shouldBeFixed: true,
-        mass: 29000,
+        // shouldBeFixed: true,
+        mass: 35000,
     })
 
     createOrbitalObjectForEl(el, el.r * 20)
